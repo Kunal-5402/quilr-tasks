@@ -3,3 +3,6 @@ var/
 __pycache__/
 .pytest_cache/
 *.sqlite3*
+
+# The assessment source document stays local.
+*.pdf
