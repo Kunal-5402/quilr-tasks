@@ -16,5 +16,8 @@ Write code only after you read `03-architecture.md` and `04-decisions.md`.
 | `tasks/task-4-router-fallback.md` | Design for Task 4. |
 | `tasks/task-5-zero-trust.md` | Placeholder. The PDF does not contain Task 5. |
 
-Status: design complete, implementation not started.
-Date: 2026-09-12. Deadline: 2026-09-14.
+Status: implemented. 93 tests pass. See the repository `README.md` to run it.
+Date: 2026-09-13. Deadline: 2026-09-14.
+
+The decision records hold a `Refinement after implementation` note wherever the
+code taught us something that the design did not predict.

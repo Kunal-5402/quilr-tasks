@@ -30,9 +30,16 @@ runs. The reviewer spends time on setup, not on the code.
 
 ## ADR-003 — Task 1 uses the low-level `mcp.server.Server`, not `FastMCP`
 
-**Decision.** Build the MCP server with the low-level `Server` class. Validate
-the input with Pydantic inside the `call_tool` handler. Raise `McpError` with
-the code `INVALID_PARAMS` (-32602).
+**Decision.** Build the MCP server with the low-level `Server` class. Register
+the `CallToolRequest` handler directly in `server.request_handlers`. Validate
+the input with Pydantic. Raise `McpError` with the code `INVALID_PARAMS`
+(-32602).
+
+**Refinement after implementation.** The `@server.call_tool()` decorator wraps
+the handler in a `try/except Exception` that returns a tool result with
+`isError=True`. A raised `McpError` never reaches the wire through it. Only a
+raw entry in `server.request_handlers` lets the dispatcher convert the
+`McpError` into a JSON-RPC error object.
 
 **Why.** T1-R5 asks for a standard JSON-RPC error code. `FastMCP` reports a
 tool failure as a normal result with `isError: true`. That is a tool-level
@@ -105,15 +112,21 @@ could still become a match.
 For example, chunk 1 ends with `a@b.c` and chunk 2 starts with `om`. If the
 redactor emits chunk 1 at once, the email escapes.
 
-**How the tail length works.** Each pattern has a maximum match length. The
-tail is the last `MAX_MATCH_LEN - 1` characters, where `MAX_MATCH_LEN` is the
-largest value over all patterns. The design caps this value at 320 characters.
-The buffer is therefore bounded and does not grow with the response.
+**How the cut works.** The redactor cuts the buffer after the last separator
+character inside a window of `MAX_HOLD` characters. No pattern contains a
+separator, so a match can never cross that cut. `MAX_HOLD` is 153, the longest
+text an email pattern can match.
 
-**Refinement.** Before the redactor holds the tail, it cuts the tail at the
-last position that cannot start a match. A space or a newline ends any of the
-3 patterns. So the redactor holds text back only after the last separator.
-This keeps the TTFT low for normal text.
+**Refinement after implementation.** A run longer than `MAX_HOLD` with no
+separator forces a cut at a fixed distance from the end. A match can cross that
+position. The redactor therefore checks for a match that spans the fallback cut
+and moves the cut to the start of that match. The buffer stays under
+`2 * MAX_HOLD`, so it is still bounded.
+
+**Refinement after implementation.** The held tail stays raw. The redactor
+redacts only the text that it emits. If it redacted the buffer in place, a
+complete but still growing match, such as `a@b.co` before `m` arrives, would
+turn into `[REDACTED]m`.
 
 **Rejected option.** Emit each chunk at once and redact each chunk alone. This
 misses every split pattern. It fails T3-R4.
@@ -233,3 +246,37 @@ provider.
 
 **Why.** In-process tests are fast and need no port. Task 1 needs a real
 subprocess, because the stdout purity test is about the process boundary.
+
+
+---
+
+## ADR-015 — Task 2 needs a valid token for every method
+
+**Decision.** A request with no token, a wrong scheme, or an unknown token gets
+-32001 for every method, `tools/list` included.
+
+**Why.** The task names the roles `admin` and `viewer`. An unauthenticated
+caller has no role at all. A gateway that forwards an anonymous request is not
+a trust boundary. Authentication happens once for the HTTP request.
+Authorization happens once for each JSON-RPC member.
+
+---
+
+## ADR-016 — Task 4 opens SQLite with `check_same_thread=False`
+
+**Decision.** Open the connection with `check_same_thread=False`. Guard every
+database call with one `asyncio.Lock` inside the limiter.
+
+**Why.** ADR-010 runs the blocking calls through `asyncio.to_thread`, which
+uses a worker pool. SQLite refuses a connection used from a second thread. The
+lock keeps the access to one caller at a time, so the flag is safe.
+
+---
+
+## ADR-017 — The requirement identifiers live in the tests
+
+**Decision.** Mark each test with `@pytest.mark.req("T3-R4")`. Add a test that
+fails when a requirement in `design/01-requirements.md` has no test.
+
+**Why.** The trace stays true as the code changes. A reviewer can map a score
+point to a test without reading every file.

@@ -23,33 +23,33 @@ State: one string, `self._buf`. Nothing else.
 
 ### The `feed` algorithm
 
-1. Append the new text to `self._buf`.
-2. Run every pattern over `self._buf`. Replace each complete match with `[REDACTED]`.
-3. Find the split point. The split point is the start of the tail that the
-   redactor must hold.
-4. Emit `self._buf[:split]`. Keep `self._buf = self._buf[split:]`.
+1. Append the new text to `self._buffer`.
+2. Find the cut point. The cut point is the start of the tail that the redactor
+   must hold.
+3. Emit `redact(self._buffer[:cut])`. Keep `self._buffer = self._buffer[cut:]`.
 
-### How to find the split point
+The held tail stays raw, so a match is redacted only once it is complete.
+
+### How to find the cut point
 
 The redactor holds back the shortest tail that could still grow into a match.
 
-1. Start from `len(buf)`. Walk back at most `MAX_HOLD` characters.
-2. Find the last index `i` where `buf[i]` is a hard separator. A hard
-   separator is a character that no pattern contains. The set is a space, a
-   tab, a newline, and a comma.
-3. The split point is `i + 1`.
-4. If no separator is inside the last `MAX_HOLD` characters, set the split
-   point to `len(buf) - MAX_HOLD`. The buffer then never exceeds `MAX_HOLD`.
+1. Set `floor = max(0, len(buffer) - MAX_HOLD)`.
+2. Walk back from the end to `floor`. Return `i + 1` for the last index `i`
+   where `buffer[i]` is a separator. A separator is a character that no pattern
+   contains: a space, a tab, a newline, a comma, a bracket, and similar.
+3. If no separator is in that window, the run is long. Check every match in the
+   buffer. If a match spans `floor`, return its start. Else return `floor`.
 
-`MAX_HOLD` is 64 characters. The longest target pattern is a credit card
-number with separators, which is under 32 characters. An email is capped at
-64 characters by the pattern. The value 64 is therefore safe and small.
+`MAX_HOLD` is 153, the longest text the email pattern can match: 64 + 1 + 63 +
+1 + 24. Step 3 can push the buffer past `MAX_HOLD`, but never past
+`2 * MAX_HOLD`.
 
 ### Why the buffer is bounded
 
-Step 4 forces a cut. The buffer length is at most `MAX_HOLD` after each call
-to `feed`. The memory use does not grow with the response length. This
-satisfies T3-R6.
+Step 2 or step 3 always returns a cut. The buffer length is at most
+`2 * MAX_HOLD` after each call to `feed`. The memory use does not grow with the
+response length. This satisfies T3-R6.
 
 ### The TTFT effect
 
@@ -107,8 +107,8 @@ The response uses `StreamingResponse` with the media type
 | An email split at every possible offset is redacted. The test loops over each offset. | T3-R3, T3-R4 |
 | An SSN split across 3 chunks is redacted. | T3-R4 |
 | A valid credit card number is redacted. An invalid one is not. | T3-R4 |
-| The buffer length never exceeds 64 after any `feed`. | T3-R6 |
-| A 10 MB stream keeps the peak buffer under 1 KB. | T3-R6 |
+| The buffer length never exceeds `MAX_HOLD` for prose with separators. | T3-R6 |
+| The buffer length never exceeds `2 * MAX_HOLD` for a run with no separator. | T3-R6 |
 | The first frame reaches the client before the provider ends the stream. | T3-R7 |
 | `flush` redacts a pattern that ends the stream with no trailing separator. | T3-R4 |
 
