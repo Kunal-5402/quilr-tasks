@@ -6,6 +6,11 @@ The overview in the PDF says the assessment has 5 tasks. It names
 "troubleshooting zero-trust network deployments" as a focus area. The document
 contains Task 1 to Task 4 only. Task 5 has no problem statement.
 
+## Decision on 2026-09-13
+
+Task 5 is out of scope. The deliverable covers task 1 to task 4.
+The outline below stays as a record of the gap.
+
 ## Action
 
 1. Ask the assessment contact for the text of Task 5. Do this first, because

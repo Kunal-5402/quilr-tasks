@@ -1,7 +1,7 @@
 # 2-day plan
 
 **Status on 2026-09-13: task 1 to task 4 are complete. 93 tests pass.**
-The runbook for task 5 is the only open item, and it waits for the missing text.
+Task 5 is out of scope: the PDF gives no problem statement for it.
 
 Start: 2026-09-12. Deliver: 2026-09-14.
 Each block is approximately 3 hours. Each block ends with green tests and a commit.
