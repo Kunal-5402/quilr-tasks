@@ -1,2 +1,5 @@
-*.pdf
-*.env
+.venv/
+var/
+__pycache__/
+.pytest_cache/
+*.sqlite3*

@@ -1,0 +1,41 @@
+[project]
+name = "fde-assessment"
+version = "0.1.0"
+description = "MCP server, MCP security gateway, and LLM gateway guardrails"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.9,<2",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.5,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.32,<1",
+    "httpx>=0.27,<1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fde"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["req: the requirement identifier that the test covers"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
