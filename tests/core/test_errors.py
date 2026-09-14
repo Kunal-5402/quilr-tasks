@@ -1,6 +1,6 @@
 import pytest
 
-from fde.core.errors import GatewayError, RateLimitExceeded, to_client_payload
+from gateways.core.errors import GatewayError, RateLimitExceeded, to_client_payload
 
 
 @pytest.mark.req("T4-R7")

@@ -9,7 +9,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fde.task3_stream_guardrail.sse import SseParser  # noqa: E402
+from gateways.llm_stream_guard.sse import SseParser  # noqa: E402
 
 REPLY = (
     "Sure. Reach the owner at ada@example.com, the tax id is 123-45-6789, "

@@ -17,7 +17,7 @@ format:
 check: lint test
 
 demo:
-	@for script in scripts/demo_task*.sh; do bash $$script; done
+	@for name in tool_server gateway stream_guard router; do bash scripts/demo_$$name.sh; done
 
 clean:
 	rm -rf var .pytest_cache

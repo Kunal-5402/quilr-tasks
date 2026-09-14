@@ -21,7 +21,7 @@ SESSION = [
 
 def main() -> None:
     process = subprocess.Popen(
-        [sys.executable, "-m", "fde.task1_mcp_server"],
+        [sys.executable, "-m", "gateways.mcp_tool_server"],
         cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     stdout_lines = []
