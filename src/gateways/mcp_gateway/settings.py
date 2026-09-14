@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class GatewaySettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="FDE_GATEWAY_")
+    model_config = SettingsConfigDict(env_prefix="MCP_GATEWAY_")
 
     downstream_url: str = "http://127.0.0.1:8012/mcp"
     admin_tool_prefix: str = "admin_"

@@ -20,7 +20,7 @@ def resolve_role(authorization: str | None) -> Role | None
 ```
 
 It reads `Authorization: Bearer <token>`. It looks the token up in the token
-store. The store comes from the setting `FDE_TOKENS`, a JSON map from a token
+store. The store comes from the setting `MCP_GATEWAY_TOKENS_JSON`, a JSON map from a token
 to a role. The default map holds 2 entries for the demo:
 `admin-token -> admin` and `viewer-token -> viewer`.
 

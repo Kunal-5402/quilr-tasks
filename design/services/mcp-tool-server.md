@@ -77,7 +77,7 @@ It gives the real stdout to the stdio transport. Any `print()` elsewhere then
 lands on stderr with a visible prefix.
 
 Logging: one `logging.StreamHandler(sys.stderr)`. Set the level from the
-environment variable `FDE_LOG_LEVEL`. Never add a handler for stdout.
+environment variable `GATEWAYS_LOG_LEVEL`. Never add a handler for stdout.
 
 ## Test list
 

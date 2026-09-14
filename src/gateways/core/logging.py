@@ -21,7 +21,7 @@ def configure() -> None:
 
     root = logging.getLogger()
     root.handlers = [handler]
-    root.setLevel(os.getenv("FDE_LOG_LEVEL", "INFO").upper())
+    root.setLevel(os.getenv("GATEWAYS_LOG_LEVEL", "INFO").upper())
     _CONFIGURED = True
 
 

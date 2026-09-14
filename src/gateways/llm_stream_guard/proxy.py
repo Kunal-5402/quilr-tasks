@@ -25,7 +25,7 @@ STOP_EVENT = "message_stop"
 
 
 class ProxySettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="FDE_STREAM_")
+    model_config = SettingsConfigDict(env_prefix="STREAM_GUARD_")
 
     provider_url: str = "http://127.0.0.1:8013/v1/stream"
 

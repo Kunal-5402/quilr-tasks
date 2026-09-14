@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class RouterSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="FDE_ROUTER_")
+    model_config = SettingsConfigDict(env_prefix="ROUTER_")
 
     database_path: str = "var/router.sqlite3"
     token_limit_per_minute: int = 50_000

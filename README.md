@@ -1,18 +1,20 @@
-# FDE Assessment — MCP & LLM Gateways
+# LLM & MCP Gateways with Guardrails
 
-Four runnable services in one Python package. Each one is a separate task from
-the assessment, and each one runs on its own.
+Four services that sit between an AI agent and the systems it reaches. Each one
+is a control point that the agent cannot skip.
 
-| Task | Service | Problem it solves |
+| Service | Guards against | Package |
 | --- | --- | --- |
-| 1 | [MCP server](src/fde/task1_mcp_server/) | Strict tool validation, and a stdout that stays pure JSON-RPC |
-| 2 | [MCP gateway](src/fde/task2_mcp_gateway/) | An agent must not call an admin tool with a viewer token |
-| 3 | [Stream guardrail](src/fde/task3_stream_guardrail/) | Redact PII in a live token stream without buffering the answer |
-| 4 | [Model router](src/fde/task4_router/) | A tenant token budget, and failover when a provider fails |
+| **MCP tool server** | A malformed tool input that reaches your business logic | [`gateways.mcp_tool_server`](src/gateways/mcp_tool_server/) |
+| **MCP security gateway** | An agent calling an admin tool with a viewer token | [`gateways.mcp_gateway`](src/gateways/mcp_gateway/) |
+| **LLM stream guard** | A model streaming an email, an SSN, or a card number to a user | [`gateways.llm_stream_guard`](src/gateways/llm_stream_guard/) |
+| **LLM model router** | One tenant draining the budget, and a provider that stalls | [`gateways.llm_router`](src/gateways/llm_router/) |
 
 MCP means Model Context Protocol. PII means personally identifiable
-information. Every external server is mocked, so no task needs an API key or a
-network.
+information. SSN means the United States social security number.
+
+Python 3.12 or later. Every external system is mocked, so nothing needs an API
+key or a network.
 
 ---
 
@@ -24,78 +26,75 @@ make check       # ruff + 93 tests
 make demo        # all 4 demonstrations, about 30 seconds
 ```
 
-Run one demonstration:
+Run one demonstration. Each script starts what it needs and stops it at the end.
 
 ```bash
-bash scripts/demo_task1.sh    # validation errors, and a clean stdout
-bash scripts/demo_task2.sh    # an admin tool denied to a viewer
-bash scripts/demo_task3.sh    # PII redacted across chunk boundaries
-bash scripts/demo_task4.sh    # failover on 429, on timeout, and the token budget
+bash scripts/demo_tool_server.sh     # validation errors, and a clean stdout
+bash scripts/demo_gateway.sh         # an admin tool denied to a viewer
+bash scripts/demo_stream_guard.sh    # PII redacted across chunk boundaries
+bash scripts/demo_router.sh          # failover on 429, on timeout, and the token budget
 ```
 
 ---
 
-## How the 4 services fit together
+## The shape of the system
 
-Task 2 guards the tool path. Task 3 and task 4 guard the model path. Task 1 is
-the tool server that sits behind task 2.
+An agent reaches 2 kinds of external system: a tool server, and a model
+provider. Each path gets its own control point.
 
 ```mermaid
 flowchart LR
-    Agent["AI agent client"]
+    Agent["AI agent"]
 
-    subgraph Tools["Tool path"]
-        G2["Task 2<br/>MCP gateway<br/>port 8002"]
-        S1["Task 1<br/>MCP server<br/>stdio"]
-        D["Mock MCP server<br/>port 8012"]
+    subgraph ToolPath["Tool path"]
+        direction TB
+        MG["MCP security gateway<br/>who may call what"]
+        TS["MCP tool server<br/>is this input safe"]
     end
 
-    subgraph Models["Model path"]
-        G3["Task 3<br/>stream guardrail<br/>port 8003"]
-        G4["Task 4<br/>model router<br/>port 8004"]
-        P["Mock providers<br/>ports 8013 to 8015"]
+    subgraph ModelPath["Model path"]
+        direction TB
+        SG["LLM stream guard<br/>what may leave"]
+        MR["LLM model router<br/>who may spend, and who serves"]
     end
 
-    Agent --> G2 --> D
-    G2 -.speaks the same protocol as.-> S1
-    Agent --> G3 --> P
-    Agent --> G4 --> P
+    Agent --> MG --> TS
+    Agent --> SG --> Provider["Model provider"]
+    Agent --> MR --> Provider
 ```
 
-Repository layout:
+Layout:
 
 ```
-src/fde/
-  core/                    logging to stderr, JSON-RPC models, error envelope
-  task1_mcp_server/        the MCP server and its stdout guard
-  task2_mcp_gateway/       the proxy, the auth, the policy, the mock downstream
-  task3_stream_guardrail/  the redactor, the SSE codec, the proxy, the mock provider
-  task4_router/            the limiter, the sqlite layer, the router, the providers
-tests/                     one folder for each task, plus the shared core
-scripts/                   one demonstration for each task
-design/                    the plan, the requirement trace, the decision records
+src/gateways/
+  core/                logging to stderr, JSON-RPC models, the error envelope
+  mcp_tool_server/     the MCP server and its stdout guard
+  mcp_gateway/         the proxy, the auth, the policy, the mock downstream
+  llm_stream_guard/    the redactor, the SSE codec, the proxy, the mock provider
+  llm_router/          the limiter, the sqlite layer, the router, the providers
+tests/                 one folder for each service, plus the shared core
+scripts/               one demonstration for each service
+design/                requirements, architecture, and 17 decision records
 ```
 
 ---
 
-## Task 1 — MCP server with strict validation
+## MCP tool server
 
-Two tools. `get_customer_record` takes a `customer_id` in the format
-`CUST-XXXXX`. `trigger_refund` takes a `customer_id`, a positive `amount`, and
-a `reason` of at least 10 characters.
-
-### The flow
+Two customer tools over the stdio transport. `get_customer_record` takes a
+`customer_id` in the format `CUST-XXXXX`. `trigger_refund` takes a
+`customer_id`, a positive `amount`, and a `reason` of at least 10 characters.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as MCP client
-    participant M as "__main__"
+    participant M as Entry point
     participant G as stdout guard
     participant S as server.py
     participant P as Pydantic model
 
-    M->>G: install before any other import
+    M->>G: install, before any other import
     G-->>M: the real stdout, for the transport
     Note over G: sys.stdout now writes to stderr
 
@@ -107,19 +106,19 @@ sequenceDiagram
         S-->>C: result with structuredContent
     else the input is malformed
         P-->>S: ValidationError
-        S-->>C: JSON-RPC error -32602 with the field list
+        S-->>C: JSON-RPC error -32602, with the field list
     end
 
     Note over C,S: stdout carries JSON-RPC only. Logs go to stderr.
 ```
 
-### The 2 decisions that matter
+### A validation failure is a protocol error, not a tool result
 
-**A validation failure must be a protocol error, not a tool result.** The SDK
-decorator `@server.call_tool()` wraps the handler in `except Exception` and
-returns a result with `isError=true`. A raised `McpError` never reaches the
-wire through it. So [server.py](src/fde/task1_mcp_server/server.py) registers
-the handler directly:
+The SDK decorator `@server.call_tool()` wraps the handler in
+`except Exception` and returns a result with `isError=true`. A raised
+`McpError` never reaches the wire through it. So
+[server.py](src/gateways/mcp_tool_server/server.py) registers the handler
+directly:
 
 ```python
 server.request_handlers[types.CallToolRequest] = _handle_call_tool
@@ -133,8 +132,12 @@ The dispatcher then turns a raised `McpError` into a real JSON-RPC error.
 | Unknown tool | -32601 |
 | A failure inside the tool body | -32603 |
 
-**A stray print must not corrupt the stream.**
-[stdout_guard.py](src/fde/task1_mcp_server/stdout_guard.py) runs before any
+The error `data` names the field and the reason, never the value. A value can
+hold customer data.
+
+### A stray print must not corrupt the stream
+
+[stdout_guard.py](src/gateways/mcp_tool_server/stdout_guard.py) runs before any
 other import. It hands the real stdout to the transport, then replaces
 `sys.stdout`. A `print()` anywhere, in your code or in a dependency, lands on
 stderr with the prefix `[stdout-leak]`.
@@ -142,28 +145,25 @@ stderr with the prefix `[stdout-leak]`.
 The advertised `inputSchema` comes from `model_json_schema()`, so the schema
 the client reads and the schema the server enforces can never differ.
 
-### Run it
-
 ```bash
-uv run python -m fde.task1_mcp_server     # stdio, no port
-bash scripts/demo_task1.sh
+uv run python -m gateways.mcp_tool_server     # stdio, no port
 ```
+
+Design: [design/services/mcp-tool-server.md](design/services/mcp-tool-server.md)
 
 ---
 
-## Task 2 — MCP security gateway
+## MCP security gateway
 
 The gateway authenticates the HTTP request once. It authorizes each JSON-RPC
 member separately. It forwards only the members it approved.
-
-### The flow
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant A as AI agent
     participant G as Gateway 8002
-    participant D as Mock MCP server 8012
+    participant D as MCP server 8012
 
     A->>G: POST /mcp with Bearer viewer-token
     G->>G: resolve_role -> viewer
@@ -184,20 +184,29 @@ sequenceDiagram
     end
 ```
 
-### The 2 decisions that matter
+### Deny before you connect
 
-**Deny before you connect.** The policy runs on the parsed body, inside the
-gateway process. The mock server counts its requests at `/stats`, and a test
-asserts that the counter does not move on a denied call. That is the proof of
-requirement T2-R7.
+The policy runs on the parsed body, inside the gateway process. The downstream
+server counts its requests at `/stats`, and a test asserts that the counter
+does not move on a denied call. That counter is the proof, not a comment.
 
-**A batch is screened member by member.** The gateway splits the batch into an
-approved list and a rejected list, forwards the approved list as one downstream
-request, then merges the answers back in the original order. A notification,
-which has no `id`, gets no response, as JSON-RPC 2.0 requires.
+### A batch is screened member by member
+
+```mermaid
+flowchart TD
+    B["JSON-RPC batch<br/>3 members"] --> S{"screen each member"}
+    S -->|approved| A["one downstream request<br/>with the approved members"]
+    S -->|denied| E["build -32001 locally"]
+    A --> M["merge by id,<br/>keep the batch order"]
+    E --> M
+    M --> R["the response array<br/>notifications dropped"]
+```
+
+A notification, which carries no `id`, gets no response, as JSON-RPC 2.0
+requires.
 
 The denial returns HTTP 200, because a JSON-RPC error is a valid JSON-RPC
-response. The error body carries the reason:
+response. The body names the reason:
 
 ```json
 {"jsonrpc": "2.0", "id": 1,
@@ -205,32 +214,29 @@ response. The error body carries the reason:
            "data": {"tool": "admin_reset_key", "required_role": "admin"}}}
 ```
 
-### Run it
-
 ```bash
-uv run python -m fde.task2_mcp_gateway --downstream   # port 8012
-uv run python -m fde.task2_mcp_gateway                # port 8002
-bash scripts/demo_task2.sh
+uv run python -m gateways.mcp_gateway --downstream   # port 8012
+uv run python -m gateways.mcp_gateway                # port 8002
 ```
 
 Demo tokens: `admin-token` and `viewer-token`.
 
+Design: [design/services/mcp-gateway.md](design/services/mcp-gateway.md)
+
 ---
 
-## Task 3 — Streaming PII guardrail
+## LLM stream guard
 
 The hard part is not the regular expression. The hard part is that a pattern
-can split across 2 chunks. The provider sends `ada@exam` and then `ple.com`.
-A redactor that works on one chunk alone misses the email. A redactor that
-waits for the end of the stream destroys the time to first token.
-
-### The flow
+can split across 2 chunks. The provider sends `ada@exam`, then `ple.com`. A
+redactor that works on one chunk alone misses the email. A redactor that waits
+for the end of the stream destroys the time to first token.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as Client
-    participant G as Gateway 8003
+    participant G as Guard 8003
     participant R as StreamRedactor
     participant P as Provider 8013
 
@@ -250,10 +256,10 @@ sequenceDiagram
     P-->>G: message_stop
     G->>R: flush
     R-->>G: "now"
-    G-->>C: delta "now" then message_stop
+    G-->>C: delta "now", then message_stop
 ```
 
-### How the hold-back works
+### How the hold-back picks its cut
 
 ```mermaid
 flowchart TD
@@ -268,12 +274,12 @@ flowchart TD
     G --> H
 ```
 
-**Why the buffer is bounded.** A cut always happens. The held tail never passes
-`2 * MAX_HOLD`, that is 306 characters, whatever the response length. Memory
-does not grow with the answer. That is requirement T3-R6.
+**The buffer is bounded.** A cut always happens, so the held tail never passes
+306 characters, whatever the answer length. Memory does not grow with the
+response.
 
-**Why the time to first token stays low.** Normal prose holds spaces often, so
-the redactor emits almost every word at once and holds one partial word. Measured
+**The time to first token stays low.** Normal prose holds spaces often, so the
+redactor emits almost every word at once and holds one partial word. Measured
 on the demonstration:
 
 | Measure | Value |
@@ -282,37 +288,33 @@ on the demonstration:
 | Time to first token | about 110 ms, near 2 provider chunks |
 | Total stream time | about 720 ms |
 
-**Why the held tail stays raw.** An early version redacted the buffer in place.
-A complete but still growing match, such as `a@b.co` before the `m` arrives,
+**The held tail stays raw.** An early version redacted the buffer in place. A
+complete but still growing match, such as `a@b.co` before the `m` arrives,
 became `[REDACTED]m`. The redactor now redacts only the text that it emits.
 
-Patterns: email, United States social security number, and credit card. A card
-candidate must also pass the Luhn check, which cuts false positives on long
-digit runs. Every pattern is bounded and nests no quantifier, so the engine
-cannot backtrack out of control.
-
-### Run it
+Patterns: email, SSN, and credit card. A card candidate must also pass the Luhn
+check, which cuts false positives on long digit runs. Every pattern is bounded
+and nests no quantifier, so the engine cannot backtrack out of control.
 
 ```bash
-uv run python -m fde.task3_stream_guardrail --provider   # port 8013
-uv run python -m fde.task3_stream_guardrail              # port 8003
-bash scripts/demo_task3.sh
+uv run python -m gateways.llm_stream_guard --provider   # port 8013
+uv run python -m gateways.llm_stream_guard              # port 8003
 ```
+
+Design: [design/services/llm-stream-guard.md](design/services/llm-stream-guard.md)
 
 ---
 
-## Task 4 — Rate limiter and model fallback
+## LLM model router
 
-Two independent concerns in one request path: a token budget for each tenant,
-and a provider that may be slow or full.
-
-### The flow
+Two concerns in one request path: a token budget for each tenant, and a
+provider that may be full or slow.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as Client
-    participant G as Gateway 8004
+    participant G as Router 8004
     participant L as TokenRateLimiter
     participant DB as sqlite on disk
     participant P1 as Primary 8014
@@ -340,27 +342,36 @@ sequenceDiagram
 
         G->>L: settle(reservation, the real token count)
         L->>DB: UPDATE the row
-        G-->>C: 200 with the header X-FDE-Provider
+        G-->>C: 200 with the header X-Gateway-Provider
     end
 ```
 
-### The 3 decisions that matter
+### The check and the insert are one transaction
 
-**The check and the insert are one transaction.** A separate check and insert
-lets 2 parallel requests both pass a full window.
-[limiter.py](src/fde/task4_router/limiter.py) runs the evict, the sum, and the
-insert inside one `BEGIN IMMEDIATE` transaction, which takes the write lock at
-the start. A test fires 50 parallel reservations and asserts that exactly 10
-pass a 1000 token window.
+A separate check and insert lets 2 parallel requests both pass a full window.
+[limiter.py](src/gateways/llm_router/limiter.py) runs the evict, the sum, and
+the insert inside one `BEGIN IMMEDIATE` transaction, which takes the write lock
+at the start. A test fires 50 parallel reservations at a 1000 token window and
+asserts that exactly 10 pass.
 
-**Counting runs in 2 phases.** The gateway reserves the worst case, the prompt
-estimate plus `max_tokens`. After the provider answers, it settles the row with
-the real usage. This stops an overshoot inside the window and keeps the total
-accurate even though the estimate is rough. A failed request releases its row,
-so a failure never consumes the budget.
+### Counting runs in 2 phases
 
-**The client learns nothing about the upstream.** Every failure passes through
-one envelope in [core/errors.py](src/fde/core/errors.py):
+```mermaid
+flowchart LR
+    A["reserve<br/>prompt estimate + max_tokens"] --> B["call the provider"]
+    B -->|answered| C["settle<br/>the real token count"]
+    B -->|both failed| D["release<br/>the row is deleted"]
+```
+
+The reservation holds the worst case while the call runs, so a burst cannot
+overshoot the window. The settle step then corrects the row, so a rough
+estimate never distorts the total. A failed request releases its row, so a
+failure never consumes the budget.
+
+### The client learns nothing about the upstream
+
+Every failure passes through one envelope in
+[core/errors.py](src/gateways/core/errors.py):
 
 ```json
 {"error": {"type": "upstream_unavailable",
@@ -368,12 +379,16 @@ one envelope in [core/errors.py](src/fde/core/errors.py):
            "request_id": "9c23d505819e4a71af5884de3e4ea5aa", "status": 503}}
 ```
 
-The cause, the upstream message, and the traceback go to stderr with the same
-`request_id`. A test plants a secret string in an upstream failure and asserts
-that it never reaches the response body.
+```mermaid
+flowchart LR
+    X["An exception anywhere<br/>in the request"] --> H["install_handlers"]
+    H --> C["Client<br/>type, message, request_id, status"]
+    H --> S["stderr<br/>the traceback and the cause,<br/>with the same request_id"]
+```
 
-`asyncio.wait_for` cancels the primary on a timeout, so no dead connection
-stays open while the secondary runs.
+A test plants a secret string in an upstream failure and asserts that it never
+reaches the response body. `asyncio.wait_for` cancels the primary on a timeout,
+so no dead connection stays open while the secondary runs.
 
 ### Demonstration output
 
@@ -387,77 +402,100 @@ stays open while the secondary runs.
        3 429
 ```
 
-### Run it
-
 ```bash
-uv run python -m fde.task4_router --primary     # port 8014
-uv run python -m fde.task4_router --secondary   # port 8015
-uv run python -m fde.task4_router               # port 8004
-bash scripts/demo_task4.sh
+uv run python -m gateways.llm_router --primary     # port 8014
+uv run python -m gateways.llm_router --secondary   # port 8015
+uv run python -m gateways.llm_router               # port 8004
 ```
 
 Demo tenant keys: `tenant-a-key` and `tenant-b-key`. The database file is
 `var/router.sqlite3`, in WAL mode.
 
+Design: [design/services/llm-router.md](design/services/llm-router.md)
+
 ---
 
 ## Shared rules
 
-All 4 services follow the same 4 rules.
+All 4 services follow the same rules.
 
-- Logs go to stderr only. Task 1 depends on it, and the rest keep it for consistency.
+- Logs go to stderr only. The tool server depends on it, and the rest keep it
+  so a container log reads the same way for all 4.
 - One `httpx.AsyncClient` for each application, opened in the FastAPI lifespan.
-- One error envelope for every client-facing failure.
-- No test needs a network, a port outside the loopback address, or an API key.
+- One error envelope for every client-facing failure, with a `request_id` that
+  also appears in the log.
+- Every external system is mocked. No test needs a network or an API key.
+
+## Configuration
+
+Each service reads its own environment prefix. Every value has a working
+default, so nothing is required.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `GATEWAYS_LOG_LEVEL` | `INFO` | The level for every stderr logger |
+| `MCP_GATEWAY_DOWNSTREAM_URL` | `http://127.0.0.1:8012/mcp` | Where the MCP gateway forwards |
+| `MCP_GATEWAY_ADMIN_TOOL_PREFIX` | `admin_` | The prefix that needs the admin role |
+| `MCP_GATEWAY_TOKENS_JSON` | 2 demo tokens | The token to role map |
+| `STREAM_GUARD_PROVIDER_URL` | `http://127.0.0.1:8013/v1/stream` | Where the stream guard reads |
+| `ROUTER_DATABASE_PATH` | `var/router.sqlite3` | The limiter database file |
+| `ROUTER_TOKEN_LIMIT_PER_MINUTE` | `50000` | The window size for each tenant |
+| `ROUTER_PRIMARY_TIMEOUT_SECONDS` | `3.0` | The primary budget before failover |
+| `ROUTER_API_KEYS_JSON` | 2 demo keys | The API key to tenant map |
 
 ## Tests
 
 ```bash
-uv run pytest -q                 # 93 tests
-uv run pytest tests/task3 -q     # one task
+uv run pytest -q                          # 93 tests
+uv run pytest tests/llm_stream_guard -q   # one service
 ```
 
 | Level | What it covers |
 | --- | --- |
 | Unit | The redactor, the limiter, the policy, the patterns, the error envelope |
 | In-process integration | Each FastAPI application through `httpx.ASGITransport` |
-| Subprocess integration | Task 1, because the stdout test needs a real process boundary |
-| Live socket | The time to first token, because the in-process transport buffers |
-| Property | Task 3, splitting the same text at every offset |
+| Subprocess integration | The tool server, because its stdout test needs a real process boundary |
+| Live socket | The time to first token, because the in-process transport buffers the body |
+| Property | The redactor, splitting the same text at every offset |
 | Concurrency | 50 parallel reservations against one sqlite file |
 
-Every test names the requirement it covers:
+Every test names the rule it covers:
 
 ```python
 @pytest.mark.req("T3-R4")
 def test_a_pattern_split_across_many_chunks_is_redacted(): ...
 ```
 
-`tests/core/test_requirement_coverage.py` fails if a requirement listed in
-[design/01-requirements.md](design/01-requirements.md) has no test.
+`tests/core/test_requirement_coverage.py` fails if a rule listed in
+[design/requirements.md](design/requirements.md) has no test.
 
 ## Known limits
 
-- The token stores in task 2 and task 4 are static maps. A real deployment
-  reads an identity provider or a tenant directory. `resolve_role` and
-  `_resolve_tenant` are each one function, so a real backend replaces one call.
-- `estimate_tokens` divides the character count by 4. A real deployment uses
-  the provider tokenizer. The settle step corrects the window total either way.
+Each limit names the one function that a real deployment replaces.
+
+- The token maps in the gateway and the router are static. Replace
+  `resolve_role` and `_resolve_tenant`.
+- `estimate_tokens` divides the character count by 4. Replace it with the
+  provider tokenizer. The settle step already corrects the window total.
 - The Luhn check reduces false positives on card numbers but does not remove them.
-- The sqlite limiter covers one host. A multi-host deployment needs Redis or a
-  shared database. The limiter interface does not change.
+- The sqlite limiter covers one host. A multi-host deployment needs Redis. The
+  limiter interface does not change.
 - The mock providers replace real model endpoints. They speak plain HTTP JSON,
   so a real adapter replaces `Provider.complete` alone.
-- A 5xx failover in task 4 is an addition, not a stated requirement.
-- Task 5 is out of scope. The assessment overview names it, but the document
-  gives no problem statement. See [design/tasks/task-5-zero-trust.md](design/tasks/task-5-zero-trust.md).
+- The router fails over on 5xx as well as on 429 and on a timeout. That is a
+  deliberate addition.
 
-## Design documents
+## Documents
 
-| File | Purpose |
+| Document | What it answers |
 | --- | --- |
-| [design/01-requirements.md](design/01-requirements.md) | Every requirement, with a trace identifier |
-| [design/02-plan-2-day.md](design/02-plan-2-day.md) | The schedule and the definition of done |
-| [design/03-architecture.md](design/03-architecture.md) | Repository layout and data flow |
-| [design/04-decisions.md](design/04-decisions.md) | 17 decision records, with the refinements found during the build |
-| [design/05-testing-and-demo.md](design/05-testing-and-demo.md) | Test strategy and review path |
+| [design/requirements.md](design/requirements.md) | Every rule, with the identifier that the tests name |
+| [design/architecture.md](design/architecture.md) | How the services fit together, and what they share |
+| [design/decisions.md](design/decisions.md) | Why each choice is what it is. 17 records |
+| [design/testing.md](design/testing.md) | How the suite proves the rules |
+| [design/roadmap.md](design/roadmap.md) | What is delivered, and what comes next |
+| [design/operations/zero-trust-runbook.md](design/operations/zero-trust-runbook.md) | Why a gateway breaks in a zero-trust network |
+
+The decision records carry a `Refinement after implementation` note wherever
+the code taught us something the design did not predict. Those notes are the
+fastest way to understand the tricky parts.
