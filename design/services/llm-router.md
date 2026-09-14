@@ -1,5 +1,6 @@
-# Task 4 — Rate limiter and model fallback router
+# LLM model router
 
+Package: `gateways.llm_router`. Port 8004.
 Covers T4-R1 to T4-R8. See ADR-009, ADR-010, ADR-011, and ADR-012.
 
 ## Module split
@@ -12,8 +13,8 @@ Covers T4-R1 to T4-R8. See ADR-009, ADR-010, ADR-011, and ADR-012.
 | `router.py` | The timeout race, the 429 rule, the failover order. |
 | `app.py` | The FastAPI route. It joins the limiter and the router. |
 
-The limiter and the router are independent. Either one works alone. This is
-the fallback if time runs short. See the risk list in `02-plan-2-day.md`.
+The limiter and the router are independent. Either one works alone, and each
+one is testable without HTTP. `app.py` is the only module that knows both.
 
 ## The limiter
 
@@ -74,7 +75,7 @@ Rules:
 `asyncio.wait_for` cancels the primary task on a timeout. The router then
 closes the response. This frees the connection.
 
-The response carries the header `X-FDE-Provider` with the name of the provider
+The response carries the header `X-Gateway-Provider` with the name of the provider
 that answered. The demo uses this header to show the failover.
 
 ## Error sanitization
@@ -102,16 +103,18 @@ the client body. See T4-R7.
 | 50 parallel requests consume the budget exactly one time each. The total never exceeds the limit. | T4-R2 |
 | A row older than 60 seconds does not count. The test moves a fake clock. | T4-R2 |
 | Two tenant keys do not share a budget. | T4-R3 |
-| A primary that returns 429 causes a secondary answer. `X-FDE-Provider` is `secondary`. | T4-R4 |
+| A primary that returns 429 causes a secondary answer. `X-Gateway-Provider` is `secondary`. | T4-R4 |
 | A primary that delays 5000 ms causes a secondary answer within about 3100 ms. | T4-R5 |
 | A primary failure at 2900 ms still returns the primary answer. | T4-R5 |
 | Both providers fail. The body matches the envelope and holds no stack trace. | T4-R6, T4-R7 |
 | The database file exists on disk after a run. | T4-R8 |
 | A failed request releases its reservation. | T4-R2 |
 
-## Run command
+## Run it
 
 ```
-uv run python -m fde.task4_router               # the gateway on port 8004
-uv run python -m fde.task4_router.providers     # the 2 mock providers, 8014 and 8015
+uv run python -m gateways.llm_router --primary     # the mock primary, port 8014
+uv run python -m gateways.llm_router --secondary   # the mock secondary, port 8015
+uv run python -m gateways.llm_router               # the gateway, port 8004
+bash scripts/demo_router.sh                        # all 3, plus the failover cases
 ```

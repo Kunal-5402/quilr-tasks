@@ -1,6 +1,19 @@
 # Decision records
 
-One record for one decision. Status is `accepted` unless stated.
+One record for one decision. Each record holds the decision, the reason, and
+the option that lost. Status is `accepted` unless stated.
+
+A record may also hold a `Refinement after implementation` note. That note
+marks a place where the code taught us something the design did not predict.
+Read those first: they carry the most information for each line.
+
+| Area | Records |
+| --- | --- |
+| Project wide | ADR-001, ADR-002, ADR-012, ADR-013, ADR-014, ADR-017 |
+| MCP tool server | ADR-003, ADR-004 |
+| MCP security gateway | ADR-005, ADR-006, ADR-015 |
+| LLM stream guard | ADR-007, ADR-008 |
+| LLM model router | ADR-009, ADR-010, ADR-011, ADR-016 |
 
 ---
 
@@ -28,7 +41,7 @@ runs. The reviewer spends time on setup, not on the code.
 
 ---
 
-## ADR-003 — Task 1 uses the low-level `mcp.server.Server`, not `FastMCP`
+## ADR-003 — The tool server uses the low-level `mcp.server.Server`, not `FastMCP`
 
 **Decision.** Build the MCP server with the low-level `Server` class. Register
 the `CallToolRequest` handler directly in `server.request_handlers`. Validate
@@ -68,7 +81,7 @@ tool calls. Assert that every line on stdout parses as JSON and holds the key
 
 ---
 
-## ADR-005 — Task 2 maps a token to a role with a static store
+## ADR-005 — The gateway maps a token to a role with a static store
 
 **Decision.** Use a dictionary from a token to a role, loaded from the
 settings. Add an optional JSON Web Token (JWT) path behind a setting, off by
@@ -84,7 +97,7 @@ without a change to the policy.
 
 ---
 
-## ADR-006 — Task 2 denies a request before it opens a downstream connection
+## ADR-006 — The gateway denies a request before it opens a downstream connection
 
 **Decision.** Run the policy check on the parsed body. Return the error from
 the gateway process. Open no HTTP connection to the downstream server.
@@ -102,7 +115,7 @@ not increase on a denied call.
 
 ---
 
-## ADR-007 — Task 3 uses a hold-back buffer, not full accumulation
+## ADR-007 — The stream guard uses a hold-back buffer, not full accumulation
 
 **Decision.** The `StreamRedactor` keeps a small tail of the text. It emits
 everything before the tail at once. The tail length is the longest text that
@@ -136,7 +149,7 @@ T3-R6 and destroys the TTFT.
 
 ---
 
-## ADR-008 — Task 3 rewrites the SSE frames, it does not pass them through
+## ADR-008 — The stream guard rewrites the SSE frames, it does not pass them through
 
 **Decision.** Parse each SSE frame. Take the delta text. Feed it to the
 redactor. Build a new SSE frame from the safe output. Keep the original event
@@ -150,7 +163,7 @@ JSON in each `data:` line.
 
 ---
 
-## ADR-009 — Task 4 stores the sliding window in SQLite with WAL mode
+## ADR-009 — The router stores the sliding window in SQLite with WAL mode
 
 **Decision.** Create the database file on disk. Set `journal_mode=WAL` and
 `busy_timeout=5000`. Store one row for each reservation.
@@ -178,7 +191,7 @@ because the check sums only the rows inside the last 60 seconds.
 
 ---
 
-## ADR-010 — Task 4 reserves tokens atomically
+## ADR-010 — The router reserves tokens atomically
 
 **Decision.** Do the evict, the sum, and the insert inside one
 `BEGIN IMMEDIATE` transaction.
@@ -197,7 +210,7 @@ call through `asyncio.to_thread`, so the event loop stays free.
 
 ---
 
-## ADR-011 — Task 4 races the timeout, it does not wait for the full call
+## ADR-011 — The router races the timeout, it does not wait for the full call
 
 **Decision.** Wrap the primary call in `asyncio.wait_for(..., timeout=3.0)`.
 Catch `TimeoutError` and `httpx.HTTPStatusError` with the status 429. Then
@@ -226,8 +239,8 @@ in its message. Assert that the secret string is absent from the response body.
 
 ## ADR-013 — Mock providers, with a real adapter behind a setting
 
-**Decision.** Ship a mock SSE provider for Task 3 and 2 mock providers for
-Task 4. Add an adapter for the real Anthropic API. The adapter is off by
+**Decision.** Ship a mock SSE provider for the stream guard, and 2 mock
+providers for the router. Add an adapter for the real Anthropic API. The adapter is off by
 default and needs `ANTHROPIC_API_KEY`.
 
 **Why.** The tests must be deterministic. A 429 and a timeout are hard to
@@ -244,13 +257,13 @@ provider.
 **Decision.** Test the FastAPI applications in-process through
 `httpx.ASGITransport`. Test the MCP server as a real subprocess.
 
-**Why.** In-process tests are fast and need no port. Task 1 needs a real
+**Why.** In-process tests are fast and need no port. The tool server needs a real
 subprocess, because the stdout purity test is about the process boundary.
 
 
 ---
 
-## ADR-015 — Task 2 needs a valid token for every method
+## ADR-015 — The gateway needs a valid token for every method
 
 **Decision.** A request with no token, a wrong scheme, or an unknown token gets
 -32001 for every method, `tools/list` included.
@@ -262,7 +275,7 @@ Authorization happens once for each JSON-RPC member.
 
 ---
 
-## ADR-016 — Task 4 opens SQLite with `check_same_thread=False`
+## ADR-016 — The router opens SQLite with `check_same_thread=False`
 
 **Decision.** Open the connection with `check_same_thread=False`. Guard every
 database call with one `asyncio.Lock` inside the limiter.
@@ -276,7 +289,7 @@ lock keeps the access to one caller at a time, so the flag is safe.
 ## ADR-017 — The requirement identifiers live in the tests
 
 **Decision.** Mark each test with `@pytest.mark.req("T3-R4")`. Add a test that
-fails when a requirement in `design/01-requirements.md` has no test.
+fails when a requirement in `design/requirements.md` has no test.
 
 **Why.** The trace stays true as the code changes. A reviewer can map a score
 point to a test without reading every file.

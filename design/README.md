@@ -1,23 +1,35 @@
-# Design folder — FDE Assessment (MCP & LLM Gateways)
+# Design
 
-This folder holds the plan, the architecture, and the recorded decisions.
-Write code only after you read `03-architecture.md` and `04-decisions.md`.
+This folder holds the reasoning behind the code. Read it before you change a
+service.
 
-| File | Purpose |
+| Document | What it answers |
 | --- | --- |
-| `01-requirements.md` | Every requirement from the PDF, with a trace identifier. |
-| `02-plan-2-day.md` | The 2-day schedule and the definition of done. |
-| `03-architecture.md` | Repository layout, shared core, and data flow. |
-| `04-decisions.md` | Decision records (ADR). One record for one decision. |
-| `05-testing-and-demo.md` | Test strategy, demo scripts, and review path. |
-| `tasks/task-1-mcp-server.md` | Design for Task 1. |
-| `tasks/task-2-mcp-gateway.md` | Design for Task 2. |
-| `tasks/task-3-streaming-guardrail.md` | Design for Task 3. |
-| `tasks/task-4-router-fallback.md` | Design for Task 4. |
-| `tasks/task-5-zero-trust.md` | Placeholder. The PDF does not contain Task 5. |
+| [requirements.md](requirements.md) | What each service must do, with a trace identifier for every rule. |
+| [architecture.md](architecture.md) | How the services fit together, and what they share. |
+| [decisions.md](decisions.md) | Why each design choice is what it is. 17 records. |
+| [testing.md](testing.md) | How the suite proves the requirements. |
+| [roadmap.md](roadmap.md) | What is delivered, and what comes next. |
 
-Status: implemented. 93 tests pass. See the repository `README.md` to run it.
-Date: 2026-09-13. Deadline: 2026-09-14.
+One document for each service:
 
-The decision records hold a `Refinement after implementation` note wherever the
-code taught us something that the design did not predict.
+| Service | Document |
+| --- | --- |
+| MCP tool server | [services/mcp-tool-server.md](services/mcp-tool-server.md) |
+| MCP security gateway | [services/mcp-gateway.md](services/mcp-gateway.md) |
+| LLM stream guard | [services/llm-stream-guard.md](services/llm-stream-guard.md) |
+| LLM model router | [services/llm-router.md](services/llm-router.md) |
+
+Operations:
+
+| Document | What it answers |
+| --- | --- |
+| [operations/zero-trust-runbook.md](operations/zero-trust-runbook.md) | Why a gateway breaks inside a zero-trust network, and what to check. |
+
+## How to read a decision record
+
+Each record in [decisions.md](decisions.md) holds the decision, the reason, and
+the option that lost. A record may also hold a `Refinement after
+implementation` note. That note marks a place where the code taught us
+something the design did not predict. Those notes are the most useful part of
+the folder.

@@ -1,15 +1,21 @@
-# Requirements trace
+# Requirement register
 
-Source: `FDE Assessment Questions - MCP & LLM Gateways.pdf`.
-Each requirement has an identifier. Tests refer to the identifier.
+Every rule that a service must follow, with an identifier. A test names the
+identifier that it covers, and `tests/core/test_requirement_coverage.py` fails
+if a rule here has no test.
 
-## Gap in the source document
+The identifiers keep the form `T<n>-R<n>`, where `T1` to `T4` are the 4
+services in the order below. The identifiers are stable, so a test marker never
+needs to change when a document moves.
 
-The overview says the assessment has 5 tasks. It names "troubleshooting
-zero-trust network deployments" as a focus area. The document contains only 4
-tasks. Task 5 is absent. See `tasks/task-5-zero-trust.md` for the action.
+| Prefix | Service |
+| --- | --- |
+| `T1` | MCP tool server, `gateways.mcp_tool_server` |
+| `T2` | MCP security gateway, `gateways.mcp_gateway` |
+| `T3` | LLM stream guard, `gateways.llm_stream_guard` |
+| `T4` | LLM model router, `gateways.llm_router` |
 
-## Task 1 — MCP server with strict validation and transport handling
+## T1 — MCP tool server
 
 | ID | Requirement |
 | --- | --- |
@@ -22,13 +28,13 @@ tasks. Task 5 is absent. See `tasks/task-5-zero-trust.md` for the action.
 | T1-R7 | Reserve stdout for JSON-RPC messages only. |
 | T1-R8 | Write all logs and debug output to stderr. |
 
-Score points: stdio isolation, protocol compliance, validation edge cases.
+Focus: stdio isolation, protocol compliance, validation edge cases.
 
-## Task 2 — MCP security gateway proxy
+## T2 — MCP security gateway
 
 | ID | Requirement |
 | --- | --- |
-| T2-R1 | Build an HTTP JSON-RPC reverse proxy between the agent client and a mock MCP server. |
+| T2-R1 | Act as an HTTP JSON-RPC reverse proxy between the agent client and a downstream MCP server. |
 | T2-R2 | Read the `Authorization: Bearer <token>` header. Extract the role, `admin` or `viewer`. |
 | T2-R3 | Forward the method `tools/list` transparently. |
 | T2-R4 | For the method `tools/call`, read `params.name`. |
@@ -36,9 +42,9 @@ Score points: stdio isolation, protocol compliance, validation edge cases.
 | T2-R6 | If the role is not `admin`, return JSON-RPC error `-32001 Unauthorized Tool Call`. |
 | T2-R7 | Do not call the downstream server when the gateway rejects the request. |
 
-Score points: wire format parsing, proxy middleware, method-level authorization.
+Focus: wire format parsing, proxy middleware, method-level authorization.
 
-## Task 3 — LLM gateway streaming guardrail (PII redaction)
+## T3 — LLM stream guard
 
 | ID | Requirement |
 | --- | --- |
@@ -50,13 +56,13 @@ Score points: wire format parsing, proxy middleware, method-level authorization.
 | T3-R6 | Do not accumulate the full response in memory. |
 | T3-R7 | Keep the Time To First Token (TTFT) low. |
 
-Score points: async chunking, buffer state, partial match handling, memory use.
+Focus: async chunking, buffer state, partial match handling, memory use.
 
-## Task 4 — Rate limiter and model fallback router
+## T4 — LLM model router
 
 | ID | Requirement |
 | --- | --- |
-| T4-R1 | Accept completion requests in a routing module. |
+| T4-R1 | Accept completion requests and route them to a model provider. |
 | T4-R2 | Apply a token-aware sliding window rate limiter. |
 | T4-R3 | Use a limit of 50000 tokens each minute for each tenant API key. |
 | T4-R4 | Fail over to a secondary provider if the primary returns HTTP 429. |
@@ -65,4 +71,4 @@ Score points: async chunking, buffer state, partial match handling, memory use.
 | T4-R7 | Do not leak upstream stack traces or internal details to the client. |
 | T4-R8 | Use on-disk SQLite as the database. |
 
-Score points: async concurrency, timeout races, window eviction, error sanitization.
+Focus: async concurrency, timeout races, window eviction, error sanitization.

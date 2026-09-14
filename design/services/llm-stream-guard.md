@@ -1,5 +1,6 @@
-# Task 3 — LLM gateway streaming guardrail (PII redaction)
+# LLM stream guard
 
+Package: `gateways.llm_stream_guard`. Port 8003.
 Covers T3-R1 to T3-R7. See ADR-007 and ADR-008.
 PII means personally identifiable information.
 
@@ -117,9 +118,10 @@ The response uses `StreamingResponse` with the media type
 `scripts/bench_ttft.py` reports the TTFT with the guardrail on and off. The
 README records both numbers. The target is an added TTFT under 5 ms.
 
-## Run command
+## Run it
 
 ```
-uv run python -m fde.task3_stream_guardrail      # the gateway on port 8003
-uv run python -m fde.task3_stream_guardrail.mock_provider  # port 8013
+uv run python -m gateways.llm_stream_guard --provider   # the mock provider, port 8013
+uv run python -m gateways.llm_stream_guard              # the gateway, port 8003
+bash scripts/demo_stream_guard.sh                       # both, plus a live stream
 ```

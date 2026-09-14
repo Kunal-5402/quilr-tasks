@@ -1,10 +1,10 @@
-"""Prove that every requirement in design/01-requirements.md has a test."""
+"""Prove that every requirement in design/requirements.md has a test."""
 
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-REQUIREMENTS = ROOT / "design" / "01-requirements.md"
+REQUIREMENTS = ROOT / "design" / "requirements.md"
 ID_PATTERN = re.compile(r"\bT\d-R\d+\b")
 
 

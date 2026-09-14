@@ -1,5 +1,6 @@
-# Task 1 — MCP server with strict validation and stdio isolation
+# MCP tool server
 
+Package: `gateways.mcp_tool_server`. Transport: stdio.
 Covers T1-R1 to T1-R8. See ADR-003 and ADR-004.
 
 ## Tools
@@ -92,8 +93,9 @@ environment variable `FDE_LOG_LEVEL`. Never add a handler for stdout.
 | Every stdout line of the subprocess parses as JSON with the key `jsonrpc`. | T1-R7 |
 | A forced `print()` inside a tool appears on stderr, not on stdout. | T1-R8 |
 
-## Run command
+## Run it
 
 ```
-uv run python -m fde.task1_mcp_server
+uv run python -m gateways.mcp_tool_server     # stdio, no port
+bash scripts/demo_tool_server.sh              # a scripted session, stdout and stderr apart
 ```

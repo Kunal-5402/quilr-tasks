@@ -1,6 +1,7 @@
-# Task 2 — MCP security gateway proxy
+# MCP security gateway
 
-Covers T2-R1 to T2-R7. See ADR-005 and ADR-006.
+Package: `gateways.mcp_gateway`. Port 8002.
+Covers T2-R1 to T2-R7. See ADR-005, ADR-006, and ADR-015.
 
 ## Endpoints
 
@@ -94,9 +95,10 @@ setting turns the pass-through on.
 | A batch with 1 allowed and 1 denied member returns 1 result and 1 error. | T2-R1 |
 | The response `id` always matches the request `id`. | T2-R1 |
 
-## Run command
+## Run it
 
 ```
-uv run python -m fde.task2_mcp_gateway          # the gateway on port 8002
-uv run python -m fde.task2_mcp_gateway.mock_downstream   # port 8012
+uv run python -m gateways.mcp_gateway --downstream   # the mock MCP server, port 8012
+uv run python -m gateways.mcp_gateway                # the gateway, port 8002
+bash scripts/demo_gateway.sh                         # both, plus the calls
 ```
