@@ -51,6 +51,7 @@ The prefix is a setting, so the rule is data, not a hard-coded string.
 4. If the method is `tools/call`, read `params.name`. If `params` is not an
    object, or `name` is missing, return -32602 for that member.
 5. Run `is_allowed`. On a failure, build the -32001 error for that member.
+   `_rejection` holds steps 3 to 5. `_screen` runs it over every member.
 6. Collect the members that pass. If the list is empty, answer at once and
    open no downstream connection.
 7. Forward the passing members as one downstream request.

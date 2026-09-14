@@ -173,12 +173,12 @@ Schema:
 ```sql
 CREATE TABLE usage (
   id           TEXT PRIMARY KEY,      -- reservation id
-  tenant_key   TEXT NOT NULL,
+  tenant       TEXT NOT NULL,
   tokens       INTEGER NOT NULL,      -- estimate first, actual after settle
   created_at   REAL NOT NULL,         -- unix seconds, float
   settled      INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX usage_window ON usage (tenant_key, created_at);
+CREATE INDEX usage_window ON usage (tenant, created_at);
 ```
 
 **Why.** T4-R8 asks for on-disk SQLite. WAL mode lets a reader work while a

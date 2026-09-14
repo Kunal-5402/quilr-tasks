@@ -19,9 +19,10 @@ one is testable without HTTP. `app.py` is the only module that knows both.
 ## The limiter
 
 ```python
-async def reserve(tenant_key: str, tokens: int) -> Reservation
-async def settle(reservation_id: str, actual_tokens: int) -> None
-async def release(reservation_id: str) -> None
+async def reserve(tenant: str, tokens: int) -> Reservation
+async def settle(reservation: Reservation, actual_tokens: int) -> None
+async def release(reservation: Reservation) -> None
+async def used(tenant: str) -> int
 ```
 
 `reserve` raises `RateLimitExceeded` when the window is full. The exception
@@ -32,9 +33,9 @@ holds `retry_after_seconds`, computed from the oldest row in the window.
 ```sql
 BEGIN IMMEDIATE;
 DELETE FROM usage WHERE created_at < :cutoff;
-SELECT COALESCE(SUM(tokens), 0) FROM usage WHERE tenant_key = :key;
+SELECT COALESCE(SUM(tokens), 0) FROM usage WHERE tenant = :tenant;
 -- if the sum plus the new tokens is over the limit -> ROLLBACK and reject
-INSERT INTO usage (id, tenant_key, tokens, created_at, settled) VALUES (...);
+INSERT INTO usage (id, tenant, tokens, created_at) VALUES (...);
 COMMIT;
 ```
 
