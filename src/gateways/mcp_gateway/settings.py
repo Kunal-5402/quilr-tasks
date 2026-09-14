@@ -1,3 +1,5 @@
+"""Settings for the MCP gateway. Every value has a working default."""
+
 import json
 
 from pydantic_settings import BaseSettings, SettingsConfigDict

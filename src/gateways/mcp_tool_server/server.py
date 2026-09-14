@@ -1,9 +1,9 @@
 """MCP server with 2 tools and protocol level error mapping.
 
 The SDK's @server.call_tool() decorator turns any exception into a tool result
-with isError=True. The task asks for JSON-RPC error codes instead, so this
-module registers the CallToolRequest handler directly. The request dispatcher
-converts a raised McpError into a JSON-RPC error object on the wire.
+with isError=True. A malformed input is a protocol failure, not a tool result,
+so this module registers the CallToolRequest handler directly. The request
+dispatcher converts a raised McpError into a JSON-RPC error object on the wire.
 """
 
 import json

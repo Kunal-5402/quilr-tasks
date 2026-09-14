@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.client.aclose()
 
 
-app = FastAPI(title="LLM Gateway streaming guardrail", lifespan=lifespan)
+app = FastAPI(title="LLM stream guard", lifespan=lifespan)
 install_handlers(app)
 
 

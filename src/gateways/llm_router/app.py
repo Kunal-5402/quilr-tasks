@@ -9,13 +9,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from gateways.core.errors import InvalidRequest, install_handlers, new_request_id
-from gateways.core.logging import get_logger
 from gateways.llm_router.limiter import TokenRateLimiter, estimate_tokens
 from gateways.llm_router.providers import Provider
 from gateways.llm_router.router import ModelRouter
 from gateways.llm_router.settings import settings
-
-log = get_logger(__name__)
 
 
 class CompletionRequest(BaseModel):
@@ -37,7 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.limiter.close()
 
 
-app = FastAPI(title="LLM Gateway router", lifespan=lifespan)
+app = FastAPI(title="LLM model router", lifespan=lifespan)
 install_handlers(app)
 
 

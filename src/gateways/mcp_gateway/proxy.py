@@ -7,7 +7,7 @@ server, so the gateway forwards only what it approved.
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 from fastapi import FastAPI, Header, Request
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.client.aclose()
 
 
-app = FastAPI(title="MCP Security Gateway", lifespan=lifespan)
+app = FastAPI(title="MCP security gateway", lifespan=lifespan)
 
 
 @app.get("/healthz")
@@ -45,13 +45,12 @@ def _tool_name(member: dict[str, Any]) -> str | None:
     return name if isinstance(name, str) else None
 
 
-def _screen(member: Any, role: Role | None) -> dict | None:
-    """Return an error response for a rejected member, or None to forward it."""
+def _rejection(member: Any, role: Role | None) -> dict | None:
+    """Return the error response for a rejected member, or None to forward it."""
     if not isinstance(member, dict) or not isinstance(member.get("method"), str):
         return jsonrpc.error_response(None, jsonrpc.INVALID_REQUEST, "Invalid Request")
 
     request_id = member.get("id")
-    method = member["method"]
 
     if role is None:
         return jsonrpc.error_response(
@@ -61,35 +60,74 @@ def _screen(member: Any, role: Role | None) -> dict | None:
             {"reason": "missing or unknown bearer token"},
         )
 
-    if method == "tools/call":
-        name = _tool_name(member)
-        if name is None:
-            return jsonrpc.error_response(
-                request_id,
-                jsonrpc.INVALID_PARAMS,
-                "Invalid params",
-                {"reason": "params.name is missing"},
-            )
-        if not is_allowed(method, name, role):
-            log.warning("denied tool=%s role=%s", name, role)
-            return jsonrpc.error_response(
-                request_id,
-                jsonrpc.UNAUTHORIZED_TOOL_CALL,
-                "Unauthorized Tool Call",
-                {"tool": name, "required_role": Role.ADMIN.value},
-            )
+    if member["method"] != "tools/call":
+        return None
+
+    name = _tool_name(member)
+    if name is None:
+        return jsonrpc.error_response(
+            request_id,
+            jsonrpc.INVALID_PARAMS,
+            "Invalid params",
+            {"reason": "params.name is missing"},
+        )
+
+    if not is_allowed(member["method"], name, role):
+        log.warning("denied tool=%s role=%s", name, role)
+        return jsonrpc.error_response(
+            request_id,
+            jsonrpc.UNAUTHORIZED_TOOL_CALL,
+            "Unauthorized Tool Call",
+            {"tool": name, "required_role": Role.ADMIN.value},
+        )
 
     return None
 
 
-async def _forward(client: httpx.AsyncClient, payload: Any, authorization: str | None) -> Any:
+class Screened(NamedTuple):
+    approved: list[Any]
+    rejected: dict[int, dict]  # the member index, and the error to answer with
+
+
+def _screen(members: list[Any], role: Role | None) -> Screened:
+    approved, rejected = [], {}
+    for index, member in enumerate(members):
+        error = _rejection(member, role)
+        if error is None:
+            approved.append(member)
+        else:
+            rejected[index] = error
+    return Screened(approved, rejected)
+
+
+async def _forward(client: httpx.AsyncClient, payload: Any, authorization: str | None) -> list[Any]:
+    """Send the approved members downstream and return the answers as a list."""
     headers = {"Content-Type": "application/json"}
     if settings.forward_authorization and authorization:
+        # The gateway is the trust boundary, so the token stops here by default.
         headers["Authorization"] = authorization
 
     response = await client.post(settings.downstream_url, json=payload, headers=headers)
     response.raise_for_status()
-    return response.json() if response.content else None
+    if not response.content:
+        return []
+
+    answer = response.json()
+    return answer if isinstance(answer, list) else [answer]
+
+
+def _merge(members: list[Any], screened: Screened, downstream: list[Any]) -> list[dict]:
+    """Rebuild the batch answer in the original order. A notification gets nothing."""
+    by_id = {str(item.get("id")): item for item in downstream if isinstance(item, dict)}
+
+    merged = []
+    for index, member in enumerate(members):
+        if index in screened.rejected:
+            if isinstance(member, dict) and member.get("id") is not None:
+                merged.append(screened.rejected[index])
+        elif isinstance(member, dict) and (answer := by_id.get(str(member.get("id")))):
+            merged.append(answer)
+    return merged
 
 
 @app.post("/mcp")
@@ -101,41 +139,22 @@ async def handle(
     except ValueError:
         return JSONResponse(jsonrpc.error_response(None, jsonrpc.PARSE_ERROR, "Parse error"))
 
-    role = resolve_role(authorization)
     is_batch = isinstance(body, list)
     members = body if is_batch else [body]
     if is_batch and not members:
         invalid = jsonrpc.error_response(None, jsonrpc.INVALID_REQUEST, "Invalid Request")
         return JSONResponse(invalid)
 
-    rejected: dict[int, dict] = {}
-    approved: list[Any] = []
-    for index, member in enumerate(members):
-        error = _screen(member, role)
-        if error is None:
-            approved.append(member)
-        else:
-            rejected[index] = error
+    screened = _screen(members, resolve_role(authorization))
 
     downstream: list[Any] = []
-    if approved:
-        payload = approved if is_batch else approved[0]
-        answer = await _forward(request.app.state.client, payload, authorization)
-        if answer is not None:
-            downstream = answer if isinstance(answer, list) else [answer]
+    if screened.approved:
+        payload = screened.approved if is_batch else screened.approved[0]
+        downstream = await _forward(request.app.state.client, payload, authorization)
 
-    if not is_batch:
-        result = next(iter(rejected.values()), None) or (downstream[0] if downstream else None)
-        return JSONResponse(result, status_code=202 if result is None else 200)
+    if is_batch:
+        merged = _merge(members, screened, downstream)
+        return JSONResponse(merged, status_code=202 if not merged else 200)
 
-    # A notification has no id, so it gets no response. Errors keep the batch order.
-    by_id = {str(item.get("id")): item for item in downstream if isinstance(item, dict)}
-    merged = []
-    for index, member in enumerate(members):
-        if index in rejected:
-            if isinstance(member, dict) and member.get("id") is not None:
-                merged.append(rejected[index])
-        elif isinstance(member, dict) and (found := by_id.get(str(member.get("id")))):
-            merged.append(found)
-
-    return JSONResponse(merged, status_code=202 if not merged else 200)
+    single = next(iter(screened.rejected.values()), None) or (downstream[0] if downstream else None)
+    return JSONResponse(single, status_code=202 if single is None else 200)

@@ -13,10 +13,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from gateways.core.logging import get_logger
-
-log = get_logger(__name__)
-
 
 class UpstreamRateLimited(Exception):
     """The provider answered 429."""

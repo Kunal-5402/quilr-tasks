@@ -1,6 +1,7 @@
 """Logging that never touches stdout.
 
-Task 1 reserves stdout for JSON-RPC. Every task uses the same rule.
+The MCP tool server reserves stdout for JSON-RPC. Every service keeps the same
+rule, so a container log reads the same way for all of them.
 """
 
 import logging
